@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Sensores IoT</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #1a237e;
+        }
+        #status {
+            font-weight: bold;
+            padding: 8px 15px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+        }
+        .status-conectado {
+            color: #1b5e20;
+            background-color: #c8e6c9;
+        }
+        .status-desconectado {
+            color: #b71c1c;
+            background-color: #ffcdd2;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 25px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #3f51b5;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+        .data-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin: 20px 0;
+            color: #2c3e50;
+        }
+        .data-unit {
+            font-size: 1.2em;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Dashboard de Sensores em Tempo Real</h1>
+        <div id="status">Conectando...</div>
+    </header>
+
+    <div class="grid-container">
+        <div class="card">
+            <h2>📍 Localização GPS</h2>
+            <p><span class="data-value" id="latitude">--</span> <span class="data-unit">Latitude</span></p>
+            <p><span class="data-value" id="longitude">--</span> <span class="data-unit">Longitude</span></p>
+        </div>
+        <div class="card">
+            <h2>📏 Distância</h2>
+            <p><span class="data-value" id="distancia">--</span> <span class="data-unit">cm</span></p>
+        </div>
+        <div class="card">
+            <h2>💨 Qualidade do Ar</h2>
+            <p><span class="data-value" id="ppm">--</span> <span class="data-unit">PPM</span></p>
+        </div>
+    </div>
+
+    <script>
+        // --- Configurações do Cliente MQTT ---
+        const brokerHost = "broker.hivemq.com";
+        const brokerPort = 8000; // Porta para WebSockets
+        const mqttTopic = "meu/esp32/sensordata"; // O MESMO tópico do seu ESP!
+        const clientID = "webClient_" + parseInt(Math.random() * 1000);
+
+        // --- Elementos do HTML ---
+        const statusElement = document.getElementById("status");
+        const latElement = document.getElementById("latitude");
+        const lonElement = document.getElementById("longitude");
+        const distElement = document.getElementById("distancia");
+        const ppmElement = document.getElementById("ppm");
+
+        // --- Lógica MQTT ---
+        // Cria um novo cliente
+        const client = new Paho.MQTT.Client(brokerHost, brokerPort, clientID);
+
+        // Define as funções de callback
+        client.onConnectionLost = onConnectionLost;
+        client.onMessageArrived = onMessageArrived;
+
+        // Conecta ao broker
+        client.connect({ onSuccess: onConnect, onFailure: onFailure });
+
+        function onConnect() {
+            console.log("Conectado ao broker MQTT!");
+            statusElement.textContent = "Conectado!";
+            statusElement.className = "status-conectado";
+            // Se inscreve no tópico para receber as mensagens
+            client.subscribe(mqttTopic);
+        }
+
+        function onFailure(response) {
+            console.log("Falha na conexão: " + response.errorMessage);
+            statusElement.textContent = "Falha na conexão!";
+            statusElement.className = "status-desconectado";
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                console.log("Conexão perdida: " + responseObject.errorMessage);
+                statusElement.textContent = "Desconectado!";
+                statusElement.className = "status-desconectado";
+            }
+        }
+
+        function onMessageArrived(message) {
+            console.log("Mensagem recebida: " + message.payloadString);
+            try {
+                // Converte a string da mensagem (JSON) para um objeto JavaScript
+                const data = JSON.parse(message.payloadString);
+
+                // Atualiza os elementos da página com os novos dados
+                latElement.textContent = data.lat !== 0 ? data.lat.toFixed(5) : "inválido";
+                lonElement.textContent = data.lng !== 0 ? data.lng.toFixed(5) : "inválido";
+                distElement.textContent = data.distancia.toFixed(1);
+                ppmElement.textContent = data.ppm.toFixed(0);
+
+            } catch (e) {
+                console.error("Erro ao processar a mensagem JSON:", e);
+            }
+        }
+    </script>
+
+</body>
+</html>
