@@ -1,98 +1,269 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef, ReactNode } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  StatusBar,
+  ScrollView,
+  Platform,
+} from 'react-native';
+import mqtt, { MqttClient} from 'mqtt';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+// --- Configurações do Cliente MQTT ---
+const brokerHost = 'broker.hivemq.com';
+const brokerPort = 8000; // Porta para WebSockets 8000 = Padrão 1883 = Configurado no ESP
+const mqttTopic = 'hivemq/test'; // O MESMO tópico do seu ESP! meu/esp32/sensordata
+const clientID = `mobileClient_${Math.random().toString(16)}`;
+const connectionUrl = `ws://${brokerHost}:${brokerPort}/mqtt`;
 
-export default function HomeScreen() {
+// --- Definições de Tipos (TypeScript) ---
+
+// Define o formato esperado da mensagem JSON do seu sensor
+interface IncomingSensorData {
+  lat: number;
+  lng: number;
+  distancia: number;
+  ppm: number;
+}
+
+// Define o tipo do nosso objeto de estado para os dados dos sensores
+interface SensorDataState {
+  lat: string | number;
+  lng: string | number;
+  distancia: string | number;
+  ppm: string | number;
+}
+
+// Define os possíveis status da conexão para termos autocompletar e segurança
+type ConnectionStatus = 
+  | 'Conectando...'
+  | 'Conectado'
+  | 'Desconectado'
+  | 'Erro de Conexão'
+  | 'Falha na Inscrição';
+
+// --- Componentes Reutilizáveis Tipados ---
+
+interface SensorCardProps {
+  title: string;
+  children: ReactNode; // ReactNode permite passar qualquer elemento React como filho
+}
+
+const SensorCard: React.FC<SensorCardProps> = ({ title, children }) => (
+  <View style={styles.card}>
+    <Text style={styles.cardTitle}>{title}</Text>
+    {children}
+  </View>
+);
+
+interface DataDisplayProps {
+  value: string | number;
+  unit: string;
+  label?: string; // A interrogação torna a propriedade opcional
+}
+
+const DataDisplay: React.FC<DataDisplayProps> = ({ value, unit, label }) => (
+  <View style={styles.dataContainer}>
+    {label && <Text style={styles.dataLabel}>{label}</Text>}
+    <Text style={styles.dataValue}>
+      {value} <Text style={styles.dataUnit}>{unit}</Text>
+    </Text>
+  </View>
+);
+
+// --- Componente Principal da Aplicação ---
+
+export default function App() {
+  const [status, setStatus] = useState<ConnectionStatus>('Conectando...');
+  const [sensorData, setSensorData] = useState<SensorDataState>({
+    lat: '--',
+    lng: '--',
+    distancia: '--',
+    ppm: '--',
+  });
+  
+  // Tipamos a ref para conter ou um MqttClient ou null
+  const clientRef = useRef<MqttClient | null>(null);
+
+  useEffect(() => {
+    // Evita reconexões se o cliente já existir
+    if (clientRef.current) return;
+
+    try {
+      // Usamos a função 'connect' importada
+      clientRef.current = mqtt.connect(connectionUrl, { clientId: clientID });
+      const client = clientRef.current;
+
+      client.on('connect', () => {
+        console.log('Conectado ao broker MQTT!');
+        setStatus('Conectado');
+        client.subscribe(mqttTopic, (err) => {
+          if (err) {
+            console.error('Falha na inscrição do tópico:', err);
+            setStatus('Falha na Inscrição');
+          }
+        });
+      });
+
+      client.on('error', (err) => {
+        console.error('Erro de conexão:', err);
+        setStatus('Erro de Conexão');
+        client.end(true); // Força o fechamento
+      });
+      
+      client.on('close', () => {
+        console.log('Conexão perdida.');
+        setStatus('Desconectado');
+      });
+
+      client.on('message', (topic, message) => {
+        console.log(`Mensagem recebida no tópico ${topic}: ${message.toString()}`);
+        try {
+          // 'as' faz um type cast, dizendo ao TS para confiar no formato do dado
+          const data = JSON.parse(message.toString()) as IncomingSensorData;
+          
+          setSensorData({
+            lat: data.lat !== 0 ? data.lat.toFixed(5) : 'Inválido',
+            lng: data.lng !== 0 ? data.lng.toFixed(5) : 'Inválido',
+            distancia: data.distancia.toFixed(1),
+            ppm: data.ppm.toFixed(0),
+          });
+        } catch (e) {
+          console.error('Erro ao processar a mensagem JSON:', e);
+        }
+      });
+
+    } catch (error) {
+      console.error("Falha ao iniciar cliente MQTT: ", error);
+      setStatus('Erro de Conexão');
+    }
+
+    // Função de limpeza para desconectar quando o app fechar
+    return () => {
+      if (clientRef.current) {
+        console.log("Desconectando cliente MQTT...");
+        clientRef.current.end();
+        clientRef.current = null;
+      }
+    };
+  }, []); // Array de dependências vazio garante que o efeito rode apenas uma vez
+
+  const getStatusStyle = () => {
+    switch (status) {
+      case 'Conectado':
+      case 'Conectando...':
+        return styles.statusConectado;
+      default:
+        return styles.statusDesconectado;
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} />
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Dashboard de Sensores</Text>
+          <View style={[styles.statusBadge, getStatusStyle()]}>
+            <Text style={styles.statusText}>{status}</Text>
+          </View>
+        </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        <SensorCard title="📍 Localização GPS">
+          <DataDisplay label="Latitude" value={sensorData.lat} unit="" />
+          <DataDisplay label="Longitude" value={sensorData.lng} unit="" />
+        </SensorCard>
+
+        <SensorCard title="📏 Distância">
+          <DataDisplay value={sensorData.distancia} unit="cm" />
+        </SensorCard>
+
+        <SensorCard title="💨 Qualidade do Ar">
+          <DataDisplay value={sensorData.ppm} unit="PPM" />
+        </SensorCard>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// O StyleSheet permanece o mesmo, pois já é fortemente tipado por padrão.
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
+    safeArea: {
+      flex: 1,
+      backgroundColor: '#f0f2f5',
+    },
+    container: {
+      padding: 20,
+      alignItems: 'center',
+    },
+    header: {
+      alignItems: 'center',
+      marginBottom: 30,
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: 'bold',
+      color: '#1a237e',
+      marginBottom: 15,
+    },
+    statusBadge: {
+      paddingVertical: 8,
+      paddingHorizontal: 20,
+      borderRadius: 20,
+    },
+    statusText: {
+      fontWeight: 'bold',
+      color: '#fff',
+    },
+    statusConectado: {
+      backgroundColor: '#2e7d32',
+    },
+    statusDesconectado: {
+      backgroundColor: '#c62828',
+    },
+    card: {
+      backgroundColor: '#ffffff',
+      borderRadius: 8,
+      padding: 25,
+      width: '100%',
+      maxWidth: 400,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.23,
+      shadowRadius: 2.62,
+      elevation: 4,
+    },
+    cardTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#3f51b5',
+      borderBottomWidth: 1,
+      borderBottomColor: '#e0e0e0',
+      paddingBottom: 10,
+      marginBottom: 15,
+      textAlign: 'center',
+    },
+    dataContainer: {
+      alignItems: 'center',
+      marginVertical: 10,
+    },
+    dataLabel: {
+      fontSize: 16,
+      color: '#7f8c8d',
+    },
+    dataValue: {
+      fontSize: 40,
+      fontWeight: '700',
+      color: '#2c3e50',
+    },
+    dataUnit: {
+      fontSize: 20,
+      fontWeight: 'normal',
+      color: '#7f8c8d',
+    },
+  });
