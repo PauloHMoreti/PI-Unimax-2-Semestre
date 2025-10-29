@@ -160,15 +160,15 @@ export default function App() {
     if (Mockar !== false) {
       console.log("Mockando dados...");
 
-      // Mockando dados
-      const mockData: IncomingSensorData = {
-        lat: Math.random() * 90,
-        lng: Math.random() * 180 - 90,
-        distancia: Math.random() * 1000,
-        ppm: Math.random() * 1000,
-      };
-
       const interval = setInterval(() => {
+        // Mockando dados
+        let mockData: IncomingSensorData = {
+          lat: Math.random() * 90,
+          lng: Math.random() * 180 - 90,
+          distancia: Math.random() * 1000,
+          ppm: Math.random() * 1000,
+        };
+
         setSensorData((prevData) => ({
           ...prevData,
           lat: mockData.lat.toFixed(5),
@@ -177,7 +177,7 @@ export default function App() {
           ppm: mockData.ppm.toFixed(0),
         }));
         console.log("Dados mockados com sucesso.");
-      }, 1000);
+      }, 5000);
 
       return () => clearInterval(interval);
     }
