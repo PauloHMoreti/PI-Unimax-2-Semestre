@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import mqtt, { MqttClient } from "mqtt";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location"; // Importa a biblioteca de localização
 
 // --- Configurações do Cliente MQTT ---
 const brokerHost = "broker.hivemq.com";
@@ -41,7 +42,8 @@ type ConnectionStatus =
   | "Conectado"
   | "Desconectado"
   | "Erro de Conexão"
-  | "Falha na Inscrição";
+  | "Falha na Inscrição"
+  | "Mockado";
 
 // --- Componentes Reutilizáveis Tipados ---
 
@@ -85,7 +87,20 @@ export default function App() {
 
   // Tipamos a ref para conter ou um MqttClient ou null
   const clientRef = useRef<MqttClient | null>(null);
-  const [Mockar, setMockar] = useState<boolean>(false);
+
+  // Estado para controlar o modo de mockagem
+  const [Mockar, setMockar] = useState<boolean>(true);
+
+  // Estados para armazenar a localização do celular
+  const [phoneLocation, setPhoneLocation] =
+    useState<Location.LocationObject | null>(null);
+  const [locationErrorMsg, setLocationErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (locationErrorMsg !== null) {
+      console.error(locationErrorMsg);
+    }
+  }, [locationErrorMsg]);
 
   useEffect(() => {
     // Evita reconexões se o cliente já existir
@@ -128,12 +143,11 @@ export default function App() {
             // 'as' faz um type cast, dizendo ao TS para confiar no formato do dado
             const data = JSON.parse(message.toString()) as IncomingSensorData;
 
-            setSensorData({
-              lat: data.lat !== 0 ? data.lat.toFixed(5) : "Inválido",
-              lng: data.lng !== 0 ? data.lng.toFixed(5) : "Inválido",
+            setSensorData((prev) => ({
+              ...prev,
               distancia: data.distancia.toFixed(1),
               ppm: data.ppm.toFixed(0),
-            });
+            }));
           } catch (e) {
             console.error("Erro ao processar a mensagem JSON:", e);
           }
@@ -154,10 +168,45 @@ export default function App() {
     } else {
       return;
     }
-  }, [Mockar]); // Array de dependências vazio garante que o efeito rode apenas uma vez
+  }, [Mockar]);
+
+  // Efeito para buscar localização do celular
+  useEffect(() => {
+    // Função auto-executável assíncrona para pedir permissão e buscar localização
+    (async () => {
+      // 1. Pede permissão ao usuário
+      let { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") {
+        setLocationErrorMsg("Permissão de localização foi negada");
+        return; // Encerra a função se a permissão for negada
+      }
+
+      // 2. Busca a localização (apenas uma vez)
+      try {
+        let location = await Location.getCurrentPositionAsync({});
+        setPhoneLocation(location);
+      } catch (error) {
+        setLocationErrorMsg("Erro ao buscar localização");
+        console.error(error);
+      }
+    })();
+  }, []); // O array vazio garante que isso rode apenas uma vez ao iniciar o app
+
+  // Efeito para atualizar os dados de localização com base na localização do celular
+  useEffect(() => {
+    if (phoneLocation) {
+      setSensorData((prev) => ({
+        ...prev,
+        lat: phoneLocation.coords.latitude.toFixed(6),
+        lng: phoneLocation.coords.longitude.toFixed(6),
+      }));
+    }
+  }, [phoneLocation]);
 
   useEffect(() => {
     if (Mockar !== false) {
+      setStatus("Mockado");
       console.log("Mockando dados...");
 
       const interval = setInterval(() => {
@@ -171,8 +220,6 @@ export default function App() {
 
         setSensorData((prevData) => ({
           ...prevData,
-          lat: mockData.lat.toFixed(5),
-          lng: mockData.lng.toFixed(5),
           distancia: mockData.distancia.toFixed(1),
           ppm: mockData.ppm.toFixed(0),
         }));
@@ -188,6 +235,9 @@ export default function App() {
       case "Conectado":
       case "Conectando...":
         return styles.statusConectado;
+
+      case "Mockado":
+        return styles.statusMockado;
       default:
         return styles.statusDesconectado;
     }
@@ -262,6 +312,9 @@ const styles = StyleSheet.create({
   },
   statusDesconectado: {
     backgroundColor: "#c62828",
+  },
+  statusMockado: {
+    backgroundColor: "#ff8002",
   },
   card: {
     backgroundColor: "#ffffff",
