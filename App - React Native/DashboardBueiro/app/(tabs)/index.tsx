@@ -14,7 +14,7 @@ import * as Location from "expo-location"; // Importa a biblioteca de localizaç
 // --- Configurações do Cliente MQTT ---
 const brokerHost = "broker.hivemq.com";
 const brokerPort = 8000; // Porta para WebSockets 8000 = Padrão 1883 = Configurado no ESP
-const mqttTopic = "hivemq/test"; // O MESMO tópico do seu ESP! meu/esp32/sensordata
+const mqttTopic = "meu/esp32/sensordata"; // O MESMO tópico do seu ESP! meu/esp32/sensordata
 const clientID = `mobileClient_${Math.random().toString(16)}`;
 const connectionUrl = `ws://${brokerHost}:${brokerPort}/mqtt`;
 
@@ -89,7 +89,7 @@ export default function App() {
   const clientRef = useRef<MqttClient | null>(null);
 
   // Estado para controlar o modo de mockagem
-  const [Mockar, setMockar] = useState<boolean>(true);
+  const [Mockar, setMockar] = useState<boolean>(false);
 
   // Estados para armazenar a localização do celular
   const [phoneLocation, setPhoneLocation] =
